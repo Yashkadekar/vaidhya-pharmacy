@@ -58,6 +58,66 @@ function Auth({onLogin,onRegister}){const [mode,setMode]=useState('login'),[form
 function Cart({cart,setCart,user,refresh}){const [address,setAddress]=useState(''),[msg,setMsg]=useState(''),[busy,setBusy]=useState(false),[rx,setRx]=useState(null);const nav=useNavigate();const total=cart.reduce((s,p)=>s+p.price*p.qty,0);const needsRx=cart.some(p=>p.prescription_required);const place=async()=>{if(!user){nav('/login');return}setBusy(true);setMsg('');try{const r=await api.post('/orders',{items:cart.map(p=>({product_id:p.id,quantity:p.qty})),address,payment_method:'COD',prescription_id:rx});setMsg(`Order #${r.data.id} placed. Status: ${r.data.status}`);setCart([]);refresh()}catch(e){setMsg(e.response?.data?.detail||'Could not place order')}finally{setBusy(false)}};return <main className="wrap page"><span className="eyebrow">YOUR SELECTION</span><h1>Shopping cart</h1>{!cart.length?<div className="emptybox">Your cart is empty. <Link to="/">Continue shopping</Link></div>:<div className="cartlayout"><div className="panel">{cart.map(p=><div className="cartrow" key={p.id}><img src={p.image_url}/><div className="grow"><b>{p.name}</b><small>{money(p.price)} each</small><button className="textbtn" onClick={()=>setCart(cart.filter(x=>x.id!==p.id))}>Remove</button></div><div className="qty"><button onClick={()=>setCart(cart.map(x=>x.id===p.id?{...x,qty:Math.max(1,x.qty-1)}:x))}>−</button>{p.qty}<button onClick={()=>setCart(cart.map(x=>x.id===p.id?{...x,qty:Math.min(50,x.qty+1)}:x))}>+</button></div></div>)}</div><div className="panel summary"><h3>Order summary</h3><div className="sumline"><span>Subtotal</span><b>{money(total)}</b></div><div className="sumline"><span>Delivery</span><span>Calculated later</span></div><label>Delivery address<textarea value={address} onChange={e=>setAddress(e.target.value)} placeholder="Enter full delivery address"/></label>{needsRx&&<label>Prescription ID (upload first)<input type="number" value={rx||''} onChange={e=>setRx(Number(e.target.value)||null)}/><small>Upload at Prescription page; pharmacist review is required.</small></label>}<div className="sumline total"><span>Total</span><b>{money(total)}</b></div><button className="btn full" disabled={busy||address.trim().length<10} onClick={place}>{busy?'Placing…':'Place COD order'}</button>{msg&&<p className="notice">{msg}</p>}</div></div>}</main>}
 function Prescription({user}){const [file,setFile]=useState(null),[msg,setMsg]=useState('');const nav=useNavigate();const upload=async()=>{if(!user){nav('/login');return}if(!file)return;const data=new FormData();data.append('file',file);try{const r=await api.post('/prescriptions',data);setMsg(`Uploaded. Your prescription reference is #${r.data.id}. Status: ${r.data.status}`)}catch(e){setMsg(e.response?.data?.detail||'Upload failed')}};return <main className="wrap page narrow"><span className="eyebrow">PHARMACIST REVIEW</span><h1>Upload prescription</h1><div className="panel uploadbox"><UploadCloud size={42}/><h3>Share your prescription securely</h3><p>Accepted formats: PDF, JPG, PNG. Maximum 5 MB. A pharmacist must review it before prescription medicines can be dispensed.</p><input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e=>setFile(e.target.files[0])}/>{file&&<small>{file.name}</small>}<button className="btn" disabled={!file} onClick={upload}>Upload for review</button>{msg&&<p className="notice">{msg}</p>}</div></main>}
 function Orders({user}){const [rows,setRows]=useState([]),[err,setErr]=useState('');useEffect(()=>{if(user)api.get('/orders/mine').then(r=>setRows(r.data)).catch(e=>setErr(e.response?.data?.detail||'Unable to load orders'))},[user]);if(!user)return <main className="wrap page"><h1>Your orders</h1><p>Please <Link to="/login">sign in</Link> to view your orders.</p></main>;return <main className="wrap page"><span className="eyebrow">YOUR ACCOUNT</span><h1>Order history</h1>{err&&<p className="error">{err}</p>}{rows.map(o=><div className="panel ordercard" key={o.id}><div><b>Order #{o.id}</b><small>{new Date(o.created_at).toLocaleString()}</small></div><b>{money(o.total)}</b><span className="status">{o.status}</span></div>)}{!rows.length&&!err&&<p className="muted">No orders yet.</p>}</main>}
+
+function AdminLogin({onLogin,user,logout}){
+  const [email,setEmail]=useState('admin@vaidhya.com');
+  const [password,setPassword]=useState('Admin@123456');
+  const [err,setErr]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [showPass,setShowPass]=useState(false);
+  const nav=useNavigate();
+  const handleLogin=async(e)=>{
+    if(e)e.preventDefault();
+    setErr('');
+    setBusy(true);
+    try{
+      const u=await onLogin(email,password);
+      if(u?.role==='admin'){nav('/admin');}
+      else{setErr('This account exists but does not have administrator privileges.');}
+    }catch(e){
+      setErr(e.response?.data?.detail||'Incorrect admin email or password.');
+    }finally{
+      setBusy(false);
+    }
+  };
+  const quickFill=(em,pw)=>{setEmail(em);setPassword(pw);setErr('');};
+  return <div className="authpage">
+    <form className="authcard" onSubmit={handleLogin} style={{maxWidth:'440px'}}>
+      <div style={{display:'flex',alignItems:'center',gap:'8px',color:'#087b5c',marginBottom:'8px'}}>
+        <ShieldCheck size={28}/>
+        <span className="eyebrow" style={{margin:0,fontSize:'13px'}}>CONTROL CENTRE</span>
+      </div>
+      <h2 style={{marginTop:0}}>Admin portal sign-in</h2>
+      <p>Restricted area for pharmacy administrators and staff.</p>
+      {user&&user.role!=='admin'&&<div style={{background:'#fffbeb',border:'1px solid #fde68a',padding:'10px 12px',borderRadius:'8px',fontSize:'12px',color:'#92400e',marginBottom:'14px'}}>
+        Currently signed in as customer (<b>{user.email}</b>). Please sign in with admin credentials below or <button type="button" onClick={logout} style={{color:'#b45309',fontWeight:'bold',textDecoration:'underline',border:'none',background:'none',cursor:'pointer',padding:0}}>log out</button>.
+      </div>}
+      <label>Admin Email<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="admin@vaidhya.com"/></label>
+      <label>Password
+        <div style={{position:'relative'}}>
+          <input type={showPass?'text':'password'} required value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••••••"/>
+          <button type="button" onClick={()=>setShowPass(!showPass)} style={{position:'absolute',right:'10px',top:'50%',transform:'translateY(-50%)',border:'none',background:'none',fontSize:'12px',color:'#087b5c',cursor:'pointer'}}>{showPass?'Hide':'Show'}</button>
+        </div>
+      </label>
+      {err&&<div className="error">{err}</div>}
+      <button className="btn full" disabled={busy} style={{marginTop:'10px'}}>{busy?'Authenticating…':'Sign in to Admin Dashboard'}</button>
+      <div style={{marginTop:'16px',padding:'12px',background:'#eef8f4',border:'1px solid #cce8dd',borderRadius:'8px',fontSize:'12px',color:'#134e3f'}}>
+        <b style={{display:'block',marginBottom:'6px'}}>Ready-to-use Admin Accounts:</b>
+        <div style={{display:'grid',gap:'6px'}}>
+          <button type="button" onClick={()=>quickFill('admin@vaidhya.com','Admin@123456')} style={{textAlign:'left',background:'#fff',border:'1px solid #087b5c',padding:'6px 10px',borderRadius:'6px',fontSize:'11px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span><b>admin@vaidhya.com</b> (Admin@123456)</span>
+            <span style={{color:'#087b5c',fontWeight:'bold'}}>Use →</span>
+          </button>
+          <button type="button" onClick={()=>quickFill('admin@vaidhya-pharmacy.com','Vaidhya@Admin2024!')} style={{textAlign:'left',background:'#fff',border:'1px solid #087b5c',padding:'6px 10px',borderRadius:'6px',fontSize:'11px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span><b>admin@vaidhya-pharmacy.com</b></span>
+            <span style={{color:'#087b5c',fontWeight:'bold'}}>Use →</span>
+          </button>
+        </div>
+      </div>
+      <Link to="/" style={{textAlign:'center',marginTop:'14px',fontSize:'13px',color:'#617383',display:'block'}}>← Return to Customer Storefront</Link>
+    </form>
+  </div>;
+}
 function Admin({products,refresh}){
  const [tab,setTab]=useState('Dashboard'),[summary,setSummary]=useState(null),[orders,setOrders]=useState([]),[allProducts,setAllProducts]=useState([]),[prescriptions,setPrescriptions]=useState([]),[customers,setCustomers]=useState([]),[reports,setReports]=useState(null),[error,setError]=useState(''),[message,setMessage]=useState(''),[editing,setEditing]=useState(null);
  const blank={name:'',category:'Medicines',description:'',price:'',stock:'',image_url:'',prescription_required:false};
